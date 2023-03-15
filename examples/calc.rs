@@ -2,14 +2,14 @@ use rui::*;
 
 // XXX: WIP
 
-fn digit_button(title: &str, state: State<String>) -> impl View {
+fn digit_button(title: &str, state: StateHandle<String>) -> impl View {
     let t = String::from(title);
     zstack((
         rectangle()
             .corner_radius(10.0)
             .color(RED_HIGHLIGHT)
             .tap(move |cx| cx[state].push_str(&t)),
-        text(title),
+        text(title).color(BLACK).offset([10.0, 10.0]),
     ))
     .padding(Auto)
 }
@@ -18,9 +18,9 @@ fn calc_button(title: &str, callback: impl Fn(&mut Context) + 'static) -> impl V
     zstack((
         rectangle()
             .corner_radius(10.0)
-            .color(RED_HIGHLIGHT)
+            .color(GREEN_HIGHLIGHT)
             .tap(callback),
-        text(title),
+        text(title).color(BLACK).offset([10.0, 10.0]),
     ))
     .padding(Auto)
 }
@@ -57,7 +57,7 @@ fn main() {
                 )),
                 hstack((
                     digit_button("0", s),
-                    calc_button(".", move |cx| cx[s].push('.')),
+                    calc_button(".", move |cx| cx[s].push_str(".")),
                     calc_button("=", |_| ()),
                 )),
             ))

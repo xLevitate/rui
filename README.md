@@ -5,6 +5,7 @@
 # rui
 
 ![build status](https://github.com/audulus/rui/actions/workflows/rust.yml/badge.svg)
+[![dependency status](https://deps.rs/repo/github/audulus/rui/status.svg)](https://deps.rs/repo/github/audulus/rui)
 
 Experimental Rust UI library, inspired by SwiftUI. Early days, but some stuff already works. rui will be used for a future version of [Audulus](http://audulus.com/)
 
@@ -138,7 +139,6 @@ widget gallery (`cargo run --example gallery`):
 ## Optional Features
 
 - `winit` - (*enabled by default*) use winit for windowing.
-- `tao` - use tao for windowing.
 - Use `default-features = false` if you are embedding rui (see https://github.com/audulus/rui-ios).
 
 ## Why?
@@ -162,8 +162,9 @@ In the long term, I'd like to move [Audulus](http://audulus.com/) over to Rust. 
 - ✅ knobs
 - ✅ editable text (still a bit rough)
 - ✅ any_view (view type erasure)
-- ❌ layout feedback
+- ✅ layout feedback
 - ✅ animation
+- ✅ UI unit testing
 
 ## References
 

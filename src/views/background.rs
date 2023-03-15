@@ -20,6 +20,7 @@ where
         actions: &mut Vec<Box<dyn Any>>,
     ) {
         self.child.process(event, id.child(&0), cx, actions);
+        self.background.process(event, id.child(&1), cx, actions);
     }
 
     fn draw(&self, id: ViewId, args: &mut DrawArgs) {
@@ -57,7 +58,7 @@ where
         &self,
         id: ViewId,
         cx: &mut Context,
-        nodes: &mut Vec<accesskit::Node>,
+        nodes: &mut Vec<(accesskit::NodeId, accesskit::Node)>,
     ) -> Option<accesskit::NodeId> {
         // XXX: if we were to create a node here, what role would it be?
         //      could print a warning if there is an node produced by background.

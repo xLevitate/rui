@@ -9,7 +9,7 @@ pub struct AnimView<V, F> {
 impl<V, F> AnimView<V, F>
 where
     V: View,
-    F: Fn(&mut Context, f32) + 'static,
+    F: Fn(&mut Context, f32) + 'static + Clone,
 {
     pub fn new(child: V, func: F) -> Self {
         Self { child, func }
@@ -19,7 +19,7 @@ where
 impl<V, F> View for AnimView<V, F>
 where
     V: View,
-    F: Fn(&mut Context, f32) + 'static,
+    F: Fn(&mut Context, f32) + 'static + Clone,
 {
     fn process(
         &self,
@@ -40,17 +40,7 @@ where
     }
 
     fn layout(&self, id: ViewId, args: &mut LayoutArgs) -> LocalSize {
-        let child_size = self.child.layout(id.child(&0), args);
-
-        args.cx.layout.insert(
-            id,
-            LayoutBox {
-                rect: LocalRect::new(LocalPoint::zero(), child_size),
-                offset: LocalOffset::zero(),
-            },
-        );
-
-        child_size
+        self.child.layout(id.child(&0), args)
     }
 
     fn dirty(&self, id: ViewId, xform: LocalToWorld, cx: &mut Context) {
@@ -74,7 +64,7 @@ where
         &self,
         id: ViewId,
         cx: &mut Context,
-        nodes: &mut Vec<accesskit::Node>,
+        nodes: &mut Vec<(accesskit::NodeId, accesskit::Node)>,
     ) -> Option<accesskit::NodeId> {
         self.child.access(id.child(&0), cx, nodes)
     }

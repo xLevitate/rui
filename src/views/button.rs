@@ -4,17 +4,36 @@ use accesskit::Role;
 pub const BUTTON_CORNER_RADIUS: f32 = 5.0;
 
 /// Calls a function when the button is tapped.
-pub fn button<A: 'static, F: Fn(&mut Context) -> A + 'static>(view: impl View, f: F) -> impl View {
-    view.padding(Auto)
-        .background(
-            rectangle()
-                .corner_radius(BUTTON_CORNER_RADIUS)
-                .color(BUTTON_BACKGROUND_COLOR),
-        )
-        .tap(move |cx| f(cx))
-        .role(Role::Button)
+pub fn button<A: 'static, F: Fn(&mut Context) -> A + 'static + Clone>(
+    view: impl View + Clone,
+    f: F,
+) -> impl View {
+    state(
+        || false,
+        move |hovering, cx| {
+            let f = f.clone();
+            view.clone()
+                .padding(Auto)
+                .background(rectangle().corner_radius(BUTTON_CORNER_RADIUS).color(
+                    if cx[hovering] {
+                        BUTTON_HOVER_COLOR
+                    } else {
+                        BUTTON_BACKGROUND_COLOR
+                    },
+                ))
+                .tap(move |cx| f(cx))
+                .hover(move |cx, inside| {
+                    cx[hovering] = inside;
+                })
+                .role(Role::Button)
+        },
+    )
 }
 
+/// Version of button which emits an action directly instead of taking a callback.
+pub fn button_a<A: Clone + 'static>(view: impl View + Clone, action: A) -> impl View {
+    button(view, move |_| action.clone())
+}
 
 #[cfg(test)]
 mod tests {
@@ -25,7 +44,14 @@ mod tests {
     fn test_button() {
         let mut cx = Context::new();
 
-        let ui = state(|| false, |pushed, _| button("button", move |cx| { *pushed.get_mut(cx) = true; }));
+        let ui = state(
+            || false,
+            |pushed, _| {
+                button("button", move |cx| {
+                    *pushed.get_mut(cx) = true;
+                })
+            },
+        );
         let sz = [100.0, 100.0].into();
 
         let button_sz = ui.layout(
@@ -33,13 +59,13 @@ mod tests {
             &mut LayoutArgs {
                 sz,
                 cx: &mut cx,
-                text_bounds: &mut |_, _, _| LocalRect::new(LocalPoint::zero(), [90.0, 90.0].into())
+                text_bounds: &mut |_, _, _| LocalRect::new(LocalPoint::zero(), [90.0, 90.0].into()),
             },
         );
 
         assert_eq!(button_sz, sz);
-        let s = State::<bool>::new(cx.root_id);
-        assert_eq!(*s.get(&mut cx), false);
+        let s = StateHandle::<bool>::new(cx.root_id);
+        assert!(!*s.get(&cx));
 
         let events = [
             Event::TouchBegin {
@@ -60,6 +86,6 @@ mod tests {
         assert!(cx.state_map.contains_key(&cx.root_id));
 
         // State should have changed.
-        assert_eq!(*s.get(&mut cx), true);
+        assert!(*s.get(&cx));
     }
 }

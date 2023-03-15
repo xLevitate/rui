@@ -2,20 +2,23 @@ use crate::*;
 use std::any::Any;
 
 /// Weak reference to app state.
-pub struct State<S> {
+///
+/// To get the underlying value, you'll need a `Context`, which is passed
+/// to all event handlers, and functions passed to `state`.
+pub struct StateHandle<S> {
     pub(crate) id: ViewId,
     phantom: std::marker::PhantomData<S>,
 }
 
-impl<S> Copy for State<S> {}
+impl<S> Copy for StateHandle<S> {}
 
-impl<S> Clone for State<S> {
+impl<S> Clone for StateHandle<S> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<S: 'static> State<S> {
+impl<S: 'static> StateHandle<S> {
     pub fn new(id: ViewId) -> Self {
         Self {
             id,
@@ -29,8 +32,8 @@ impl<S: 'static> State<S> {
     }
 }
 
-impl<S: 'static> Binding<S> for State<S> {
-    fn get<'a>(&self, cx: &'a mut Context) -> &'a S {
+impl<S: 'static> Binding<S> for StateHandle<S> {
+    fn get<'a>(&self, cx: &'a Context) -> &'a S {
         cx.get(*self)
     }
     fn get_mut<'a>(&self, cx: &'a mut Context) -> &'a mut S {
@@ -38,6 +41,7 @@ impl<S: 'static> Binding<S> for State<S> {
     }
 }
 
+#[derive(Clone)]
 struct StateView<D, F> {
     default: D,
     func: F,
@@ -48,7 +52,7 @@ where
     V: View,
     S: 'static,
     D: Fn() -> S + 'static,
-    F: Fn(State<S>, &mut Context) -> V + 'static,
+    F: Fn(StateHandle<S>, &Context) -> V + 'static,
 {
     fn process(
         &self,
@@ -58,12 +62,12 @@ where
         actions: &mut Vec<Box<dyn Any>>,
     ) {
         cx.init_state(id, &self.default);
-        (self.func)(State::new(id), cx).process(event, id.child(&0), cx, actions);
+        (self.func)(StateHandle::new(id), cx).process(event, id.child(&0), cx, actions);
     }
 
     fn draw(&self, id: ViewId, args: &mut DrawArgs) {
         args.cx.init_state(id, &self.default);
-        (self.func)(State::new(id), args.cx).draw(id.child(&0), args);
+        (self.func)(StateHandle::new(id), args.cx).draw(id.child(&0), args);
     }
 
     fn layout(&self, id: ViewId, args: &mut LayoutArgs) -> LocalSize {
@@ -89,7 +93,7 @@ where
         if compute_layout {
             args.cx.id_stack.push(id);
 
-            let view = (self.func)(State::new(id), args.cx);
+            let view = (self.func)(StateHandle::new(id), args.cx);
 
             let child_size = view.layout(id.child(&0), args);
 
@@ -133,34 +137,34 @@ where
             let world_pts = pts.map(|p| xform.transform_point(p));
             cx.dirty_region.add_rect(WorldRect::from_points(world_pts));
         } else {
-            (self.func)(State::new(id), cx).dirty(id.child(&0), xform, cx);
+            (self.func)(StateHandle::new(id), cx).dirty(id.child(&0), xform, cx);
         }
     }
 
     fn hittest(&self, id: ViewId, pt: LocalPoint, cx: &mut Context) -> Option<ViewId> {
         cx.init_state(id, &self.default);
-        (self.func)(State::new(id), cx).hittest(id.child(&0), pt, cx)
+        (self.func)(StateHandle::new(id), cx).hittest(id.child(&0), pt, cx)
     }
 
     fn commands(&self, id: ViewId, cx: &mut Context, cmds: &mut Vec<CommandInfo>) {
         cx.init_state(id, &self.default);
-        (self.func)(State::new(id), cx).commands(id.child(&0), cx, cmds);
+        (self.func)(StateHandle::new(id), cx).commands(id.child(&0), cx, cmds);
     }
 
     fn gc(&self, id: ViewId, cx: &mut Context, map: &mut Vec<ViewId>) {
         cx.init_state(id, &self.default);
         map.push(id);
-        (self.func)(State::new(id), cx).gc(id.child(&0), cx, map);
+        (self.func)(StateHandle::new(id), cx).gc(id.child(&0), cx, map);
     }
 
     fn access(
         &self,
         id: ViewId,
         cx: &mut Context,
-        nodes: &mut Vec<accesskit::Node>,
+        nodes: &mut Vec<(accesskit::NodeId, accesskit::Node)>,
     ) -> Option<accesskit::NodeId> {
         cx.init_state(id, &self.default);
-        (self.func)(State::new(id), cx).access(id.child(&0), cx, nodes)
+        (self.func)(StateHandle::new(id), cx).access(id.child(&0), cx, nodes)
     }
 }
 
@@ -177,7 +181,7 @@ pub fn state<
     S: 'static,
     V: View,
     D: Fn() -> S + 'static,
-    F: Fn(State<S>, &mut Context) -> V + 'static,
+    F: Fn(StateHandle<S>, &Context) -> V + 'static,
 >(
     initial: D,
     f: F,
@@ -189,7 +193,7 @@ pub fn state<
 }
 
 /// Convenience to get the context.
-pub fn with_cx<V: View, F: Fn(&mut Context) -> V + 'static>(f: F) -> impl View {
+pub fn with_cx<V: View, F: Fn(&Context) -> V + 'static>(f: F) -> impl View {
     state(|| (), move |_, cx| f(cx))
 }
 

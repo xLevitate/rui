@@ -6,20 +6,6 @@ use std::{
     sync::Mutex,
 };
 
-#[cfg(feature = "tao")]
-use tao::{
-    accelerator::Accelerator,
-    dpi::PhysicalSize,
-    event::{
-        ElementState, Event as WEvent, MouseButton as WMouseButton, Touch, TouchPhase, WindowEvent,
-    },
-    event_loop::{ControlFlow, EventLoop, EventLoopProxy},
-    keyboard::{Key as KeyPress, KeyCode, ModifiersState},
-    menu::{MenuBar as Menu, MenuItem, MenuItemAttributes},
-    window::{Window, WindowBuilder},
-};
-
-#[cfg(feature = "winit")]
 use winit::{
     dpi::PhysicalSize,
     event::{
@@ -86,12 +72,13 @@ async fn setup(window: &Window) -> Setup {
     // log::info!("Initializing the surface...");
 
     let backend = wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all);
+    let instance_desc = wgpu::InstanceDescriptor::default();
 
-    let instance = wgpu::Instance::new(backend);
+    let instance = wgpu::Instance::new(instance_desc);
     let (size, surface) = unsafe {
         let size = window.inner_size();
         let surface = instance.create_surface(&window);
-        (size, surface)
+        (size, surface.unwrap())
     };
     let adapter =
         wgpu::util::initialize_adapter_from_env_or_default(&instance, backend, Some(&surface))
@@ -126,117 +113,6 @@ async fn setup(window: &Window) -> Setup {
     }
 }
 
-#[cfg(feature = "tao")]
-mod menus {
-    use super::*;
-
-    struct MenuItem2 {
-        name: String,
-        submenu: Vec<usize>,
-        command: CommandInfo,
-    }
-
-    type CommandMap = HashMap<tao::menu::MenuId, String>;
-
-    fn make_menu_rec(items: &Vec<MenuItem2>, i: usize, command_map: &mut CommandMap) -> Menu {
-        let mut menu = Menu::new();
-
-        if i == 0 {
-            let mut app_menu = Menu::new();
-
-            let app_name = match std::env::current_exe() {
-                Ok(exe_path) => exe_path.file_name().unwrap().to_str().unwrap().to_string(),
-                Err(_) => "rui".to_string(),
-            };
-
-            app_menu.add_native_item(MenuItem::About(app_name, Default::default()));
-            app_menu.add_native_item(MenuItem::Quit);
-            menu.add_submenu("rui", true, app_menu);
-        }
-
-        for j in &items[i].submenu {
-            let item = &items[*j];
-            if !item.submenu.is_empty() {
-                menu.add_submenu(
-                    item.name.as_str(),
-                    true,
-                    make_menu_rec(items, *j, command_map),
-                );
-            } else {
-                let mut attrs = MenuItemAttributes::new(item.name.as_str());
-                if let Some(key) = item.command.key {
-                    let key_code = match key {
-                        HotKey::KeyA => KeyCode::KeyA,
-                        HotKey::KeyB => KeyCode::KeyB,
-                        HotKey::KeyC => KeyCode::KeyC,
-                        HotKey::KeyD => KeyCode::KeyD,
-                        HotKey::KeyE => KeyCode::KeyE,
-                        HotKey::KeyF => KeyCode::KeyF,
-                        HotKey::KeyG => KeyCode::KeyG,
-                        HotKey::KeyH => KeyCode::KeyH,
-                        HotKey::KeyI => KeyCode::KeyI,
-                        HotKey::KeyJ => KeyCode::KeyJ,
-                        HotKey::KeyK => KeyCode::KeyK,
-                        HotKey::KeyL => KeyCode::KeyL,
-                        HotKey::KeyM => KeyCode::KeyM,
-                        HotKey::KeyN => KeyCode::KeyN,
-                        HotKey::KeyO => KeyCode::KeyO,
-                        HotKey::KeyP => KeyCode::KeyP,
-                        HotKey::KeyQ => KeyCode::KeyQ,
-                        HotKey::KeyR => KeyCode::KeyR,
-                        HotKey::KeyS => KeyCode::KeyS,
-                        HotKey::KeyT => KeyCode::KeyT,
-                        HotKey::KeyU => KeyCode::KeyU,
-                        HotKey::KeyV => KeyCode::KeyV,
-                        HotKey::KeyW => KeyCode::KeyW,
-                        HotKey::KeyX => KeyCode::KeyX,
-                        HotKey::KeyY => KeyCode::KeyY,
-                        HotKey::KeyZ => KeyCode::KeyZ,
-                    };
-
-                    let accel = Accelerator::new(ModifiersState::SUPER, key_code);
-                    attrs = attrs.with_accelerators(&accel);
-                }
-                let id = menu.add_item(attrs).id();
-                command_map.insert(id, item.command.path.clone());
-            }
-        }
-
-        menu
-    }
-
-    pub(crate) fn build_menubar(commands: &Vec<CommandInfo>, command_map: &mut CommandMap) -> Menu {
-        let mut items: Vec<MenuItem2> = vec![MenuItem2 {
-            name: "root".into(),
-            submenu: vec![],
-            command: CommandInfo {
-                path: "".into(),
-                key: None,
-            },
-        }];
-
-        for command in commands {
-            let mut v = 0;
-            for name in command.path.split(':') {
-                if let Some(item) = items[v].submenu.iter().find(|x| items[**x].name == name) {
-                    v = *item;
-                } else {
-                    let n = items.len();
-                    items[v].submenu.push(n);
-                    v = n;
-                    items.push(MenuItem2 {
-                        name: name.into(),
-                        submenu: vec![],
-                        command: command.clone(),
-                    });
-                }
-            }
-        }
-
-        make_menu_rec(&items, 0, command_map)
-    }
-}
-
 /// Call this function to run your UI.
 pub fn rui(view: impl View) {
     let event_loop = EventLoop::new();
@@ -254,10 +130,12 @@ pub fn rui(view: impl View) {
 
     let mut config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        format: surface.get_supported_formats(&adapter)[0],
+        format: surface.get_capabilities(&adapter).formats[0],
         width: size.width,
         height: size.height,
         present_mode: wgpu::PresentMode::Fifo,
+        alpha_mode: wgpu::CompositeAlphaMode::Auto,
+        view_formats: vec![],
     };
     surface.configure(&device, &config);
 
@@ -266,19 +144,14 @@ pub fn rui(view: impl View) {
         *GLOBAL_EVENT_LOOP_PROXY.lock().unwrap() = Some(event_loop.create_proxy());
     }
 
-    let mut vger = Vger::new(&device, wgpu::TextureFormat::Bgra8UnormSrgb);
+    let mut vger = Vger::new(&device, config.format);
     let mut cx = Context::new();
     let mut mouse_position = LocalPoint::zero();
 
     let mut commands: Vec<CommandInfo> = Vec::new();
     let mut command_map = HashMap::new();
     cx.commands(&view, &mut commands);
-    #[cfg(feature = "tao")]
-    {
-        window.set_menu(Some(menus::build_menubar(&commands, &mut command_map)));
-    }
 
-    #[cfg(feature = "winit")]
     {
         // So we can infer a type for CommandMap when winit is enabled.
         command_map.insert("", "");
@@ -353,20 +226,6 @@ pub fn rui(view: impl View) {
                     window_title = cx.window_title.clone();
                     window.set_title(&cx.window_title);
                 }
-
-                #[cfg(feature = "tao")]
-                {
-                    let mut new_commands = vec![];
-                    cx.commands(&view, &mut new_commands);
-
-                    if new_commands != *commands {
-                        print!("commands changed");
-                        commands = new_commands;
-
-                        command_map.clear();
-                        window.set_menu(Some(menus::build_menubar(&commands, &mut command_map)));
-                    }
-                }
             }
             WEvent::RedrawRequested(_) => {
                 // Redraw the application.
@@ -421,8 +280,6 @@ pub fn rui(view: impl View) {
                         };
                         cx.process(&view, &event)
                     }
-                    #[cfg(feature = "tao")]
-                    _ => {}
                 };
             }
             WEvent::WindowEvent {
@@ -452,7 +309,6 @@ pub fn rui(view: impl View) {
                     TouchPhase::Ended | TouchPhase::Cancelled => {
                         Some(Event::TouchEnd { id: 0, position })
                     }
-                    _ => None,
                 };
 
                 if let Some(event) = event {
@@ -476,50 +332,6 @@ pub fn rui(view: impl View) {
                 cx.process(&view, &event)
             }
 
-            #[cfg(feature = "tao")]
-            WEvent::WindowEvent {
-                event: WindowEvent::KeyboardInput { event, .. },
-                ..
-            } => {
-                if event.state == ElementState::Pressed {
-                    let key = match event.logical_key {
-                        KeyPress::Character(c) => Some(Key::Character(c)),
-                        KeyPress::Enter => Some(Key::Enter),
-                        KeyPress::Tab => Some(Key::Tab),
-                        KeyPress::Space => Some(Key::Space),
-                        KeyPress::ArrowDown => Some(Key::ArrowDown),
-                        KeyPress::ArrowLeft => Some(Key::ArrowLeft),
-                        KeyPress::ArrowRight => Some(Key::ArrowRight),
-                        KeyPress::ArrowUp => Some(Key::ArrowUp),
-                        KeyPress::End => Some(Key::End),
-                        KeyPress::Home => Some(Key::Home),
-                        KeyPress::PageDown => Some(Key::PageDown),
-                        KeyPress::PageUp => Some(Key::PageUp),
-                        KeyPress::Backspace => Some(Key::Backspace),
-                        KeyPress::Delete => Some(Key::Delete),
-                        KeyPress::Escape => Some(Key::Escape),
-                        KeyPress::F1 => Some(Key::F1),
-                        KeyPress::F2 => Some(Key::F2),
-                        KeyPress::F3 => Some(Key::F3),
-                        KeyPress::F4 => Some(Key::F4),
-                        KeyPress::F5 => Some(Key::F5),
-                        KeyPress::F6 => Some(Key::F6),
-                        KeyPress::F7 => Some(Key::F7),
-                        KeyPress::F8 => Some(Key::F8),
-                        KeyPress::F9 => Some(Key::F9),
-                        KeyPress::F10 => Some(Key::F10),
-                        KeyPress::F11 => Some(Key::F11),
-                        KeyPress::F12 => Some(Key::F12),
-                        _ => None,
-                    };
-
-                    if let Some(key) = key {
-                        cx.process(&view, &Event::Key(key))
-                    }
-                }
-            }
-
-            #[cfg(feature = "winit")]
             WEvent::WindowEvent {
                 event: WindowEvent::KeyboardInput { input, .. },
                 ..
@@ -528,96 +340,100 @@ pub fn rui(view: impl View) {
                     if let Some(code) = input.virtual_keycode {
                         let key = match code {
                             // VirtualKeyCode::Character(c) => Some(Key::Character(c)),
-                            VirtualKeyCode::Key1 => Some(Key::Character("1")),
-                            VirtualKeyCode::Key2 => Some(Key::Character("2")),
-                            VirtualKeyCode::Key3 => Some(Key::Character("3")),
-                            VirtualKeyCode::Key4 => Some(Key::Character("4")),
-                            VirtualKeyCode::Key5 => Some(Key::Character("5")),
-                            VirtualKeyCode::Key6 => Some(Key::Character("6")),
-                            VirtualKeyCode::Key7 => Some(Key::Character("7")),
-                            VirtualKeyCode::Key8 => Some(Key::Character("8")),
-                            VirtualKeyCode::Key9 => Some(Key::Character("9")),
-                            VirtualKeyCode::Key0 => Some(Key::Character("0")),
+                            VirtualKeyCode::Key1 => Some(Key::Character('1')),
+                            VirtualKeyCode::Key2 => Some(Key::Character('2')),
+                            VirtualKeyCode::Key3 => Some(Key::Character('3')),
+                            VirtualKeyCode::Key4 => Some(Key::Character('4')),
+                            VirtualKeyCode::Key5 => Some(Key::Character('5')),
+                            VirtualKeyCode::Key6 => Some(Key::Character('6')),
+                            VirtualKeyCode::Key7 => Some(Key::Character('7')),
+                            VirtualKeyCode::Key8 => Some(Key::Character('8')),
+                            VirtualKeyCode::Key9 => Some(Key::Character('9')),
+                            VirtualKeyCode::Key0 => Some(Key::Character('0')),
                             VirtualKeyCode::A => {
-                                Some(Key::Character(if cx.key_mods.shift { "A" } else { "a" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'A' } else { 'a' }))
                             }
                             VirtualKeyCode::B => {
-                                Some(Key::Character(if cx.key_mods.shift { "B" } else { "b" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'B' } else { 'b' }))
                             }
                             VirtualKeyCode::C => {
-                                Some(Key::Character(if cx.key_mods.shift { "C" } else { "c" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'C' } else { 'c' }))
                             }
                             VirtualKeyCode::D => {
-                                Some(Key::Character(if cx.key_mods.shift { "D" } else { "d" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'D' } else { 'd' }))
                             }
                             VirtualKeyCode::E => {
-                                Some(Key::Character(if cx.key_mods.shift { "E" } else { "e" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'E' } else { 'e' }))
                             }
                             VirtualKeyCode::F => {
-                                Some(Key::Character(if cx.key_mods.shift { "F" } else { "f" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'F' } else { 'f' }))
                             }
                             VirtualKeyCode::G => {
-                                Some(Key::Character(if cx.key_mods.shift { "G" } else { "g" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'G' } else { 'g' }))
                             }
                             VirtualKeyCode::H => {
-                                Some(Key::Character(if cx.key_mods.shift { "H" } else { "h" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'H' } else { 'h' }))
                             }
                             VirtualKeyCode::I => {
-                                Some(Key::Character(if cx.key_mods.shift { "I" } else { "i" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'I' } else { 'i' }))
                             }
                             VirtualKeyCode::J => {
-                                Some(Key::Character(if cx.key_mods.shift { "J" } else { "j" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'J' } else { 'j' }))
                             }
                             VirtualKeyCode::K => {
-                                Some(Key::Character(if cx.key_mods.shift { "K" } else { "k" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'K' } else { 'k' }))
                             }
                             VirtualKeyCode::L => {
-                                Some(Key::Character(if cx.key_mods.shift { "L" } else { "l" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'L' } else { 'l' }))
                             }
                             VirtualKeyCode::M => {
-                                Some(Key::Character(if cx.key_mods.shift { "M" } else { "m" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'M' } else { 'm' }))
                             }
                             VirtualKeyCode::N => {
-                                Some(Key::Character(if cx.key_mods.shift { "N" } else { "n" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'N' } else { 'n' }))
                             }
                             VirtualKeyCode::O => {
-                                Some(Key::Character(if cx.key_mods.shift { "O" } else { "o" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'O' } else { 'o' }))
                             }
                             VirtualKeyCode::P => {
-                                Some(Key::Character(if cx.key_mods.shift { "P" } else { "p" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'P' } else { 'p' }))
                             }
                             VirtualKeyCode::Q => {
-                                Some(Key::Character(if cx.key_mods.shift { "Q" } else { "q" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'Q' } else { 'q' }))
                             }
                             VirtualKeyCode::R => {
-                                Some(Key::Character(if cx.key_mods.shift { "R" } else { "r" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'R' } else { 'r' }))
                             }
                             VirtualKeyCode::S => {
-                                Some(Key::Character(if cx.key_mods.shift { "S" } else { "s" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'S' } else { 's' }))
                             }
                             VirtualKeyCode::T => {
-                                Some(Key::Character(if cx.key_mods.shift { "T" } else { "t" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'T' } else { 't' }))
                             }
                             VirtualKeyCode::U => {
-                                Some(Key::Character(if cx.key_mods.shift { "U" } else { "u" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'U' } else { 'u' }))
                             }
                             VirtualKeyCode::V => {
-                                Some(Key::Character(if cx.key_mods.shift { "V" } else { "v" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'V' } else { 'v' }))
                             }
                             VirtualKeyCode::W => {
-                                Some(Key::Character(if cx.key_mods.shift { "W" } else { "w" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'W' } else { 'w' }))
                             }
                             VirtualKeyCode::X => {
-                                Some(Key::Character(if cx.key_mods.shift { "X" } else { "x" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'X' } else { 'x' }))
                             }
                             VirtualKeyCode::Y => {
-                                Some(Key::Character(if cx.key_mods.shift { "Y" } else { "y" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'Y' } else { 'y' }))
                             }
                             VirtualKeyCode::Z => {
-                                Some(Key::Character(if cx.key_mods.shift { "Z" } else { "z" }))
+                                Some(Key::Character(if cx.key_mods.shift { 'Z' } else { 'z' }))
                             }
-                            VirtualKeyCode::Period => Some(Key::Character(".")),
-                            VirtualKeyCode::Comma => Some(Key::Character(",")),
+                            VirtualKeyCode::Semicolon => Some(Key::Character(';')),
+                            VirtualKeyCode::Colon => Some(Key::Character(';')),
+                            VirtualKeyCode::Caret => Some(Key::Character('^')),
+                            VirtualKeyCode::Asterisk => Some(Key::Character('*')),
+                            VirtualKeyCode::Period => Some(Key::Character('.')),
+                            VirtualKeyCode::Comma => Some(Key::Character(',')),
                             VirtualKeyCode::Return => Some(Key::Enter),
                             VirtualKeyCode::Tab => Some(Key::Tab),
                             VirtualKeyCode::Space => Some(Key::Space),
@@ -658,36 +474,12 @@ pub fn rui(view: impl View) {
                 event: WindowEvent::ModifiersChanged(mods),
                 ..
             } => {
-                #[cfg(feature = "tao")]
-                {
-                    cx.key_mods = KeyboardModifiers {
-                        shift: mods.shift_key(),
-                        control: mods.control_key(),
-                        alt: mods.alt_key(),
-                        command: mods.super_key(),
-                    };
-                }
-
-                #[cfg(feature = "winit")]
-                {
-                    cx.key_mods = KeyboardModifiers {
-                        shift: mods.shift(),
-                        control: mods.ctrl(),
-                        alt: mods.alt(),
-                        command: mods.logo(),
-                    };
-                }
-            }
-
-            #[cfg(feature = "tao")]
-            WEvent::MenuEvent { menu_id, .. } => {
-                //println!("menu event");
-
-                if let Some(command) = command_map.get(&menu_id) {
-                    //println!("found command {:?}", command);
-                    let event = Event::Command(command.clone());
-                    cx.process(&view, &event)
-                }
+                cx.key_mods = KeyboardModifiers {
+                    shift: mods.shift(),
+                    control: mods.ctrl(),
+                    alt: mods.alt(),
+                    command: mods.logo(),
+                };
             }
             _ => (),
         }

@@ -4,7 +4,7 @@ use accesskit::Role;
 /// Modifiers common to all views.
 pub trait Modifiers: View + Sized {
     /// Calls a closure after rendering with context and delta time.
-    fn anim<F: Fn(&mut Context, f32) + 'static>(self, func: F) -> AnimView<Self, F> {
+    fn anim<F: Fn(&mut Context, f32) + 'static + Clone>(self, func: F) -> AnimView<Self, F> {
         AnimView::new(self, func)
     }
 
@@ -49,6 +49,11 @@ pub trait Modifiers: View + Sized {
         DragS::new(self, s, f)
     }
 
+    /// Calls a function in response to a mouse hovering.
+    fn hover<F: Fn(&mut Context, bool) + 'static>(self, f: F) -> Hover<Self, F> {
+        Hover::new(self, f)
+    }
+
     /// Add an environment value.
     fn env<E: Clone + 'static>(self, value: E) -> SetenvView<Self, E> {
         SetenvView::new(self, value)
@@ -66,7 +71,7 @@ pub trait Modifiers: View + Sized {
 
     /// Calls a function with the view's geometry after layout runs.
     /// Currently only the view's size is returned.
-    fn geom<F: Fn(&mut Context, LocalSize) + 'static>(self, f: F) -> Geom<Self, F> {
+    fn geom<F: Fn(&mut Context, LocalSize, LocalToWorld) + 'static>(self, f: F) -> Geom<Self, F> {
         Geom::new(self, f)
     }
 
@@ -98,6 +103,12 @@ pub trait Modifiers: View + Sized {
     /// Calls a function in response to a tap.
     fn tap<A: 'static, F: Fn(&mut Context) -> A + 'static>(self, f: F) -> Tap<Self, F> {
         Tap::new(self, f)
+    }
+
+    /// Version of `tap` which takes an action type instead
+    /// of a function.
+    fn tap_a<A: 'static>(self, action: A) -> TapA<Self, A> {
+        TapA::new(self, action)
     }
 
     /// Specify the title of the window.

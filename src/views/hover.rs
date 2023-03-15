@@ -1,45 +1,50 @@
 use crate::*;
 use std::any::Any;
 
-/// Struct for the `geom` modifier.
-pub struct Geom<V, F> {
+/// Struct for the `Hover` gesture.
+pub struct Hover<V, F> {
     child: V,
     func: F,
 }
 
-impl<V, F> View for Geom<V, F>
+impl<V, F, A> Hover<V, F>
 where
     V: View,
-    F: Fn(&mut Context, LocalSize, LocalToWorld) + 'static,
+    F: Fn(&mut Context, bool) -> A + 'static,
+{
+    pub fn new(v: V, f: F) -> Self {
+        Self { child: v, func: f }
+    }
+}
+
+impl<V, F, A> View for Hover<V, F>
+where
+    V: View,
+    F: Fn(&mut Context, bool) -> A + 'static,
+    A: 'static,
 {
     fn process(
         &self,
         event: &Event,
-        id: ViewId,
+        vid: ViewId,
         cx: &mut Context,
         actions: &mut Vec<Box<dyn Any>>,
     ) {
-        self.child.process(event, id.child(&0), cx, actions);
+        if let Event::TouchMove { id: _, position } = &event {
+            if cx.mouse_button.is_none() {
+                let inside = self.hittest(vid, *position, cx).is_some();
+                actions.push(Box::new((self.func)(cx, inside)));
+            }
+        }
+        self.child.process(event, vid.child(&0), cx, actions)
     }
 
     fn draw(&self, id: ViewId, args: &mut DrawArgs) {
-        let rect = args.cx.layout[&id].rect;
-        (self.func)(args.cx, rect.size, args.vger.current_transform());
-        self.child.draw(id.child(&0), args);
+        self.child.draw(id.child(&0), args)
     }
 
     fn layout(&self, id: ViewId, args: &mut LayoutArgs) -> LocalSize {
-        let sz = self.child.layout(id.child(&0), args);
-
-        args.cx.layout.insert(
-            id,
-            LayoutBox {
-                rect: LocalRect::new(LocalPoint::zero(), sz),
-                offset: LocalOffset::zero(),
-            },
-        );
-
-        sz
+        self.child.layout(id.child(&0), args)
     }
 
     fn dirty(&self, id: ViewId, xform: LocalToWorld, cx: &mut Context) {
@@ -68,14 +73,4 @@ where
     }
 }
 
-impl<V, F> private::Sealed for Geom<V, F> {}
-
-impl<V, F> Geom<V, F>
-where
-    V: View,
-    F: Fn(&mut Context, LocalSize, LocalToWorld) + 'static,
-{
-    pub fn new(child: V, f: F) -> Self {
-        Self { child, func: f }
-    }
-}
+impl<V, F> private::Sealed for Hover<V, F> {}

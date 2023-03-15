@@ -106,6 +106,11 @@ pub struct Context {
 
     /// Offset for events at the root level.
     root_offset: LocalOffset,
+
+    /// Render the dirty rectangle for debugging?
+    render_dirty: bool,
+
+    pub(crate) access_node_classes: accesskit::NodeClassSet,
 }
 
 impl Default for Context {
@@ -136,6 +141,8 @@ impl Context {
             id_stack: vec![],
             window_size: Size2D::default(),
             root_offset: LocalOffset::zero(),
+            render_dirty: false,
+            access_node_classes: accesskit::NodeClassSet::default(),
         }
     }
 
@@ -144,7 +151,7 @@ impl Context {
         &mut self,
         view: &impl View,
         vger: &mut Vger,
-        access_nodes: &mut Vec<accesskit::Node>,
+        access_nodes: &mut Vec<(accesskit::NodeId, accesskit::Node)>,
         window_size: Size2D<f32, WorldSpace>,
     ) -> bool {
         // If the window size has changed, force a relayout.
@@ -170,10 +177,12 @@ impl Context {
 
             if nodes != *access_nodes {
                 println!("access nodes:");
-                for node in &nodes {
+                for (id, node) in &nodes {
                     println!(
-                        "  id: {:?}, role: {:?}, children: {:?}",
-                        node.id, node.role, node.children
+                        "  id: {:?} role: {:?}, children: {:?}",
+                        id,
+                        node.role(),
+                        node.children()
                     );
                 }
                 *access_nodes = nodes;
@@ -246,16 +255,18 @@ impl Context {
         view.draw(self.root_id, &mut DrawArgs { cx: self, vger });
         self.enable_dirty = true;
 
-        let paint = vger.color_paint(RED_HIGHLIGHT);
-        let xf = WorldToLocal::identity();
-        for rect in self.dirty_region.rects() {
-            vger.stroke_rect(
-                xf.transform_point(rect.min()),
-                xf.transform_point(rect.max()),
-                0.0,
-                1.0,
-                paint,
-            );
+        if self.render_dirty {
+            let paint = vger.color_paint(RED_HIGHLIGHT);
+            let xf = WorldToLocal::identity();
+            for rect in self.dirty_region.rects() {
+                vger.stroke_rect(
+                    xf.transform_point(rect.min()),
+                    xf.transform_point(rect.max()),
+                    0.0,
+                    1.0,
+                    paint,
+                );
+            }
         }
 
         self.dirty_region.clear();
@@ -357,14 +368,14 @@ impl Context {
         old_value
     }
 
-    pub fn get<S>(&self, id: State<S>) -> &S
+    pub fn get<S>(&self, id: StateHandle<S>) -> &S
     where
         S: 'static,
     {
         self.state_map[&id.id].state.downcast_ref::<S>().unwrap()
     }
 
-    pub fn get_mut<S>(&mut self, id: State<S>) -> &mut S
+    pub fn get_mut<S>(&mut self, id: StateHandle<S>) -> &mut S
     where
         S: 'static,
     {
@@ -376,22 +387,22 @@ impl Context {
     }
 }
 
-impl<S> ops::Index<State<S>> for Context
+impl<S> ops::Index<StateHandle<S>> for Context
 where
     S: 'static,
 {
     type Output = S;
 
-    fn index(&self, index: State<S>) -> &Self::Output {
+    fn index(&self, index: StateHandle<S>) -> &Self::Output {
         self.get(index)
     }
 }
 
-impl<S> ops::IndexMut<State<S>> for Context
+impl<S> ops::IndexMut<StateHandle<S>> for Context
 where
     S: 'static,
 {
-    fn index_mut(&mut self, index: State<S>) -> &mut Self::Output {
+    fn index_mut(&mut self, index: StateHandle<S>) -> &mut Self::Output {
         self.get_mut(index)
     }
 }
